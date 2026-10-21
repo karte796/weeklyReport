@@ -24,6 +24,7 @@ Saved to ~/weekly-reports/2026-W42.md
 - **Continuity**: finds your previous report automatically and checks last period's plan against this period's work.
 - **Weekly, monthly, custom range, topic reports** (e.g. only "performance" work).
 - **E-mail delivery** via SMTP or [agently-cli](https://agent.qq.com) (QQ Mail agent mailbox), always with a confirmation step.
+- **Optional GUI**: `weekly-report gui` opens a native window (macOS) — pick a period, preview and deselect commits/sessions, generate, edit and send. React inside [pywebview](https://pywebview.flowrl.com); CLI and GUI share the same core.
 - **Privacy controls**: `--dry-run` shows exactly what would be sent; send titles only; exclude repos/projects; or run fully local with Ollama.
 - **Zero heavy dependencies**: pure Python standard library (plus `tomli` on Python < 3.11). No SDKs.
 
@@ -33,9 +34,13 @@ Requires Python 3.9+ and git.
 
 ```bash
 pipx install git+https://github.com/karte796/weeklyReport.git
+# with the GUI (adds pywebview):
+pipx install "weekly-report[gui] @ git+https://github.com/karte796/weeklyReport.git"
 # or
 pip install git+https://github.com/karte796/weeklyReport.git
 ```
+
+Updates are just git + pipx: push/pull the repo, then `pipx upgrade weekly-report`.
 
 ## Quick start
 
@@ -64,6 +69,17 @@ weekly-report providers                # list providers and whether keys are set
 ```
 
 Reports are saved to `output_dir` (default `~/weekly-reports`) as `2026-W42.md`, `2026-09.md`, `2026-W42-performance.md`, … The newest earlier report of the same kind is passed to the model as the "previous report". Use `--previous FILE` to pick one or `--no-previous` to skip.
+
+## GUI
+
+```bash
+pipx install "weekly-report[gui] @ git+https://github.com/karte796/weeklyReport.git"
+weekly-report gui
+```
+
+A three-step window: **collect** (pick the period, watch the scan, tick off repos/sessions you do not want in the report) → **generate** (choose provider/model, compare with the previous report, edit the result) → **send** (recipients, subject, confirm). A settings form edits the TOML config without a text editor. Everything runs locally; the GUI talks only to the same collectors and providers as the CLI.
+
+To develop the UI: `cd ui && npm install && npm run dev`, then `weekly-report gui --dev` (loads the Vite dev server; in a plain browser the UI runs on mock data). Build with `npm run build` — the output is committed under `weekly_report/gui_static/` so pip installs need no Node.
 
 ## Providers
 
@@ -170,6 +186,7 @@ Issues and pull requests are welcome — new session sources and providers espec
 - **连续性**：自动找到上一期报告，逐条对照上期计划和本期完成情况。
 - **周报 / 月报 / 自定义区间 / 专项报告**（如只看“性能优化”相关工作）。
 - **发邮件**：支持 SMTP 和 agently-cli（QQ 邮箱 agent 邮箱），发送前都要确认。
+- **可选图形界面**：`weekly-report gui` 打开原生窗口（macOS）——选周期、预览并勾选不要的提交/会话、生成、编辑、发送。React + pywebview，与 CLI 共用同一核心。
 - **隐私可控**：`--dry-run` 先看要发出去的内容；可以只发会话标题、排除指定仓库或项目，或用 Ollama 完全本地运行。
 - **几乎零依赖**：只用 Python 标准库（Python 3.11 以下额外需要 `tomli`），不装任何 SDK。
 
@@ -179,13 +196,29 @@ Issues and pull requests are welcome — new session sources and providers espec
 
 ```bash
 pipx install git+https://github.com/karte796/weeklyReport.git
+# 带图形界面（额外安装 pywebview）：
+pipx install "weekly-report[gui] @ git+https://github.com/karte796/weeklyReport.git"
 
 weekly-report init                 # 生成 ~/.config/weekly-report/config.toml
 # 修改配置里的 git.roots（代码目录）和 provider
 export DEEPSEEK_API_KEY=sk-...
 weekly-report --dry-run            # 只看采集结果，不调用接口
 weekly-report                      # 生成上一周的周报
+weekly-report gui                  # 打开图形界面（需 [gui] extra）
 ```
+
+仓库更新后 `pipx upgrade weekly-report` 即完成升级，无需任何服务器。
+
+### 图形界面
+
+```bash
+pipx install "weekly-report[gui] @ git+https://github.com/karte796/weeklyReport.git"
+weekly-report gui
+```
+
+三步式窗口：**采集**（选周期，看扫描进度，勾掉不想写进周报的仓库/会话）→ **生成**（选服务商和模型，对照上期报告，直接编辑结果）→ **发送**（收件人、主题、确认）。设置页用表单编辑 TOML 配置，不用手改文件。全部本地运行，GUI 与 CLI 调用同一套采集器和接口。
+
+前端开发：`cd ui && npm install && npm run dev`，另开 `weekly-report gui --dev`（加载 Vite 开发服务器）；直接用浏览器打开则自动使用 mock 数据。`npm run build` 的产物提交在 `weekly_report/gui_static/`，pip 安装无需 Node。
 
 ### 常用命令
 

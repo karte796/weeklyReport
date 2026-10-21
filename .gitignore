@@ -21,3 +21,6 @@ weekly-reports/
 .DS_Store
 .idea/
 .vscode/
+
+# GUI frontend
+ui/node_modules/

@@ -17,10 +17,10 @@ from weekly_report.mailer import MailError, send_agently, send_smtp
 from weekly_report.markdown import markdown_to_html
 from weekly_report.periods import Period, resolve_period, split_keywords
 from weekly_report.providers import PRESETS, ProviderError, complete, resolve_provider
-from weekly_report.report import (build_messages, find_previous_report, load_template,
-                                  report_filename, report_title)
+from weekly_report.report import (build_messages, find_previous_report, first_heading,
+                                  load_template, report_filename, report_title)
 
-COMMANDS = {"generate", "send", "init", "providers"}
+COMMANDS = {"generate", "send", "init", "providers", "gui"}
 
 
 def _err(message: str) -> None:
@@ -83,6 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     prov = sub.add_parser("providers", help="list providers and whether their API key is set")
     prov.add_argument("-c", "--config")
+
+    gui = sub.add_parser("gui", help="open the graphical interface (needs the [gui] extra)")
+    gui.add_argument("-c", "--config")
+    gui.add_argument("--dev", action="store_true",
+                     help="load the UI from the Vite dev server (development only)")
     return parser
 
 
@@ -108,13 +113,6 @@ def _ask(question: str, assume_yes: bool) -> str:
 def _edit(path: Path) -> None:
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
     subprocess.call([*shlex.split(editor), str(path)])
-
-
-def _first_heading(markdown: str) -> str:
-    for line in markdown.splitlines():
-        if line.startswith("# "):
-            return line[2:].strip()
-    return "Work report"
 
 
 def deliver(cfg: dict, markdown: str, subject: str, to: Optional[list[str]] = None,
@@ -220,14 +218,14 @@ def cmd_generate(args: argparse.Namespace) -> int:
         if answer == "e":
             _edit(out_path)
             report = out_path.read_text(encoding="utf-8")
-    _info(deliver(cfg, report, _subject(cfg, _first_heading(report), period), assume_yes=args.yes))
+    _info(deliver(cfg, report, _subject(cfg, first_heading(report), period), assume_yes=args.yes))
     return 0
 
 
 def cmd_send(args: argparse.Namespace) -> int:
     cfg, _ = load_config(args.config)
     markdown = expand(args.file).read_text(encoding="utf-8")
-    subject = args.subject or _first_heading(markdown)
+    subject = args.subject or first_heading(markdown)
     _info(deliver(cfg, markdown, subject, to=args.to, method=args.method, assume_yes=args.yes))
     return 0
 
@@ -268,10 +266,15 @@ def cmd_providers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gui(args: argparse.Namespace) -> int:
+    from weekly_report.gui import run_gui   # lazy: the gui extra is optional
+    return run_gui(args.config, dev=args.dev)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(list(sys.argv[1:] if argv is None else argv))
     handlers = {"generate": cmd_generate, "send": cmd_send, "init": cmd_init,
-                "providers": cmd_providers}
+                "providers": cmd_providers, "gui": cmd_gui}
     try:
         return handlers[args.command](args)
     except (ConfigError, ProviderError, MailError, ValueError, OSError) as exc:

@@ -29,7 +29,8 @@ Issues = "https://github.com/karte796/weeklyReport/issues"
 weekly-report = "weekly_report.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "tomli-w>=1"]
+gui = ["pywebview>=5", "tomli-w>=1"]
 
 [tool.setuptools]
 packages = ["weekly_report", "weekly_report.collectors"]
@@ -38,7 +39,7 @@ packages = ["weekly_report", "weekly_report.collectors"]
 version = { attr = "weekly_report.__version__" }
 
 [tool.setuptools.package-data]
-weekly_report = ["templates/*.md", "config.example.toml"]
+weekly_report = ["templates/*.md", "config.example.toml", "gui_static/*", "gui_static/assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

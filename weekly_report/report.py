@@ -49,6 +49,14 @@ def report_filename(period: Period, topic: str = "") -> str:
     return f"{period.label}{suffix}.md"
 
 
+def first_heading(markdown: str) -> str:
+    """The first `# ` heading, used as the default e-mail subject."""
+    for line in markdown.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return "Work report"
+
+
 def _label_pattern(period: Period, topic: str) -> re.Pattern:
     suffix = re.escape(f"-{slugify(topic)}") if topic else ""
     if period.kind == "monthly":
