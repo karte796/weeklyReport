@@ -63,6 +63,11 @@ class Session:
         parts = Path(self.cwd).parts
         return "/".join(parts[-2:]) if len(parts) >= 2 else self.cwd
 
+    @property
+    def key(self) -> str:
+        """Stable identity used by the GUI selection."""
+        return f"{self.source}:{self.session_id}"
+
     def matches(self, keywords: list[str]) -> bool:
         if not keywords:
             return True
@@ -320,21 +325,35 @@ _GLOBS: dict[str, tuple[str, Callable]] = {
 def collect_agents(sources: list[str], period: Period, tz: Optional[tzinfo] = None,
                    max_prompt_len: int = 160, roots: Optional[dict] = None,
                    exclude: Optional[list[str]] = None,
-                   keywords: Optional[list[str]] = None) -> tuple[list[Session], list[str]]:
-    """Return (sessions, sources whose record directory does not exist)."""
+                   keywords: Optional[list[str]] = None,
+                   progress: Optional[Callable[[dict], None]] = None,
+                   cancel: Optional[Callable[[], bool]] = None) -> tuple[list[Session], list[str], bool]:
+    """Return (sessions, sources whose record directory does not exist, cancelled).
+
+    `cancel` is polled per source and per record file; a cancelled run stops early
+    and returns the sessions parsed so far.
+    """
     defaults = default_roots()
     roots = roots or {}
     sessions: list[Session] = []
     missing: list[str] = []
+    cancelled = False
     for source in sources:
+        if cancel and cancel():
+            cancelled = True
+            break
         if source not in _GLOBS:
             continue
         root = Path(roots.get(source) or defaults[source]).expanduser()
         if not root.is_dir():
             missing.append(source)
             continue
+        if progress:
+            progress({"phase": "collect", "current": LABELS[source]})
         pattern, parser = _GLOBS[source]
         for path in sorted(root.glob(pattern)):
+            if cancel and cancel():
+                return sessions, missing, True
             if path.name == "sessions.json":
                 continue
             session = parser(path, period, tz, max_prompt_len)
@@ -345,4 +364,4 @@ def collect_agents(sources: list[str], period: Period, tz: Optional[tzinfo] = No
                 continue
             if session.matches(keywords or []):
                 sessions.append(session)
-    return sessions, missing
+    return sessions, missing, cancelled

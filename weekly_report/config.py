@@ -85,6 +85,12 @@ class ConfigError(Exception):
     pass
 
 
+def read_user_toml(path: Path) -> dict:
+    """The raw user TOML (no defaults merged); raises TOMLDecodeError on bad syntax."""
+    with path.open("rb") as fh:
+        return tomllib.load(fh)
+
+
 def load_config(path: Optional[str] = None) -> tuple[dict, Optional[Path]]:
     """Return (config, loaded_path). loaded_path is None when no file exists."""
     cfg_path = resolve_config_path(path)
@@ -93,8 +99,7 @@ def load_config(path: Optional[str] = None) -> tuple[dict, Optional[Path]]:
             raise ConfigError(f"config file not found: {cfg_path}")
         return copy.deepcopy(DEFAULTS), None
     try:
-        with cfg_path.open("rb") as fh:
-            user = tomllib.load(fh)
+        user = read_user_toml(cfg_path)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"invalid TOML in {cfg_path}: {exc}") from exc
     return deep_merge(DEFAULTS, user), cfg_path

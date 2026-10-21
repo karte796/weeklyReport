@@ -1,9 +1,10 @@
 """Gather all activity for a period and render it as Markdown for the model."""
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import tzinfo
-from typing import Optional
+from typing import Callable, Optional
 
 from weekly_report.collectors.agents import LABELS, Session, collect_agents
 from weekly_report.collectors.git import RepoCommits, collect_git
@@ -22,6 +23,7 @@ class Activity:
     agents_enabled: bool = True
     include_prompts: bool = True
     max_prompts_per_session: int = 8
+    cancelled: bool = False
 
     @property
     def commit_count(self) -> int:
@@ -32,24 +34,48 @@ class Activity:
         return not self.repos and not self.sessions
 
 
-def gather(cfg: dict, period: Period, keywords: list[str], tz: Optional[tzinfo] = None) -> Activity:
+def gather(cfg: dict, period: Period, keywords: list[str], tz: Optional[tzinfo] = None,
+           progress: Optional[Callable[[dict], None]] = None,
+           cancel: Optional[Callable[[], bool]] = None) -> Activity:
+    """Collect git commits and AI sessions for the period.
+
+    `progress` receives events tagged with their source ("git" / "agents");
+    a cancelled run stops early and keeps whatever was already collected.
+    """
     git_cfg, agents_cfg = cfg["git"], cfg["agents"]
     activity = Activity(period, git_enabled=bool(git_cfg["enabled"]),
                         agents_enabled=bool(agents_cfg["enabled"]),
                         include_prompts=bool(agents_cfg["include_prompts"]),
                         max_prompts_per_session=int(agents_cfg["max_prompts_per_session"]))
+
+    def tagged(source: str) -> Optional[Callable[[dict], None]]:
+        if not progress:
+            return None
+        return lambda event: progress({**event, "source": source})
+
     if activity.git_enabled:
-        activity.repos, activity.repos_scanned = collect_git(
+        activity.repos, activity.repos_scanned, activity.cancelled = collect_git(
             [expand(r) for r in git_cfg["roots"]], period,
             authors=list(git_cfg["authors"]), max_depth=int(git_cfg["max_depth"]),
-            exclude=list(git_cfg["exclude"]), keywords=keywords)
-    if activity.agents_enabled:
-        activity.sessions, activity.missing_sources = collect_agents(
+            exclude=list(git_cfg["exclude"]), keywords=keywords,
+            progress=tagged("git"), cancel=cancel)
+    if activity.agents_enabled and not activity.cancelled:
+        activity.sessions, activity.missing_sources, activity.cancelled = collect_agents(
             list(agents_cfg["sources"]), period, tz=tz,
             max_prompt_len=int(agents_cfg["max_prompt_len"]),
             roots=dict(agents_cfg.get("roots") or {}),
-            exclude=list(agents_cfg["exclude"]), keywords=keywords)
+            exclude=list(agents_cfg["exclude"]), keywords=keywords,
+            progress=tagged("agents"), cancel=cancel)
     return activity
+
+
+def filter_activity(activity: Activity, keep_session_keys: set[str],
+                    keep_repo_keys: set[str]) -> Activity:
+    """Copy of the activity keeping only the selected sessions and repos (GUI selection)."""
+    return dataclasses.replace(
+        activity,
+        repos=[repo for repo in activity.repos if repo.key in keep_repo_keys],
+        sessions=[session for session in activity.sessions if session.key in keep_session_keys])
 
 
 def render_git(activity: Activity) -> str:

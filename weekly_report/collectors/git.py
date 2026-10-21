@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from weekly_report.periods import Period
 
@@ -26,6 +26,11 @@ class RepoCommits:
     name: str
     path: Path
     commits: list[Commit] = field(default_factory=list)
+
+    @property
+    def key(self) -> str:
+        """Stable identity used by the GUI selection."""
+        return str(self.path)
 
 
 def run_git(repo: Path, args: list[str]) -> str:
@@ -122,18 +127,38 @@ def collect_repo(repo: Path, authors: list[str], period: Period,
 
 def collect_git(roots: Iterable[Path], period: Period, authors: Optional[list[str]] = None,
                 max_depth: int = 4, exclude: Optional[list[str]] = None,
-                keywords: Optional[list[str]] = None) -> tuple[list[RepoCommits], int]:
-    """Return (repos with commits, number of repos scanned)."""
+                keywords: Optional[list[str]] = None,
+                progress: Optional[Callable[[dict], None]] = None,
+                cancel: Optional[Callable[[], bool]] = None) -> tuple[list[RepoCommits], int, bool]:
+    """Return (repos with commits, number of repos scanned, cancelled).
+
+    `cancel` is polled between steps; a cancelled run stops early and returns
+    the repos collected so far. `progress` receives {phase, current, ...} events:
+    "discover" while locating repositories, "collect" per repository.
+    """
     canonical: dict[Path, Path] = {}
+    cancelled = False
     for root in roots:
+        if cancel and cancel():
+            cancelled = True
+            break
         for repo in find_repos(root, max_depth):
             main = canonical_repo(repo)
             if any(pattern and pattern in str(main) for pattern in exclude or []):
                 continue
             canonical.setdefault(main, main)
+            if progress:
+                progress({"phase": "discover", "current": str(main), "scanned": len(canonical)})
 
     results: list[RepoCommits] = []
-    for repo in sorted(canonical):
+    ordered = sorted(canonical)
+    for index, repo in enumerate(ordered):
+        if cancel and cancel():
+            cancelled = True
+            break
+        if progress:
+            progress({"phase": "collect", "scanned": index, "total": len(ordered),
+                      "current": repo.name})
         repo_authors = list(authors or [])
         if not repo_authors:
             email = repo_author(repo)
@@ -144,4 +169,4 @@ def collect_git(roots: Iterable[Path], period: Period, authors: Optional[list[st
         if commits:
             results.append(RepoCommits(repo.name, repo, commits))
     results.sort(key=lambda r: -len(r.commits))
-    return results, len(canonical)
+    return results, len(canonical), cancelled

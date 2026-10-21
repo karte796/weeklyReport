@@ -2,7 +2,7 @@ from datetime import timezone
 
 from conftest import make_records, make_repo
 
-from weekly_report.collectors import Activity, gather, render_activity
+from weekly_report.collectors import Activity, filter_activity, gather, render_activity
 from weekly_report.collectors.agents import clean_prompt, collect_agents, parse_iso
 from weekly_report.collectors.git import collect_git
 from weekly_report.config import DEFAULTS, deep_merge
@@ -10,8 +10,8 @@ from weekly_report.config import DEFAULTS, deep_merge
 
 def test_all_agent_sources(tmp_path, week):
     roots = make_records(tmp_path)
-    sessions, missing = collect_agents(list(roots), week, tz=timezone.utc, roots=roots)
-    assert missing == []
+    sessions, missing, cancelled = collect_agents(list(roots), week, tz=timezone.utc, roots=roots)
+    assert missing == [] and not cancelled
     by_source = {s.source: s for s in sessions}
     assert set(by_source) == {"claude", "codex", "kiro", "kiro-cli"}
 
@@ -31,11 +31,13 @@ def test_all_agent_sources(tmp_path, week):
 
 def test_agent_filters_and_missing(tmp_path, week):
     roots = make_records(tmp_path)
-    sessions, _ = collect_agents(list(roots), week, tz=timezone.utc, roots=roots, keywords=["pagination"])
+    sessions, _, _ = collect_agents(list(roots), week, tz=timezone.utc, roots=roots,
+                                    keywords=["pagination"])
     assert [s.source for s in sessions] == ["codex"]
-    sessions, _ = collect_agents(list(roots), week, tz=timezone.utc, roots=roots, exclude=["code/app"])
+    sessions, _, _ = collect_agents(list(roots), week, tz=timezone.utc, roots=roots,
+                                    exclude=["code/app"])
     assert "claude" not in {s.source for s in sessions}
-    _, missing = collect_agents(["claude"], week, roots={"claude": str(tmp_path / "nope")})
+    _, missing, _ = collect_agents(["claude"], week, roots={"claude": str(tmp_path / "nope")})
     assert missing == ["claude"]
 
 
@@ -55,16 +57,51 @@ def test_git_collects_own_commits_only(tmp_path, week):
     ))
     make_repo(tmp_path / "code" / "other", email="someone@example.com")
     make_repo(tmp_path / "code" / "app" / "node_modules" / "dep")  # pruned
-    repos, scanned = collect_git([tmp_path / "code"], week)
-    assert scanned == 2
+    repos, scanned, cancelled = collect_git([tmp_path / "code"], week)
+    assert scanned == 2 and not cancelled
     found = {r.name: [c.subject for c in r.commits] for r in repos}
     # each repo is filtered by its own user.email; the out-of-order old commit is excluded
     assert found == {"app": ["feat: add search"], "other": ["feat: add search"]}
 
-    repos, _ = collect_git([tmp_path / "code"], week, authors=["someone@example.com"])
+    repos, _, _ = collect_git([tmp_path / "code"], week, authors=["someone@example.com"])
     assert [r.name for r in repos] == ["other"]
-    repos, _ = collect_git([tmp_path / "code"], week, keywords=["nothing"])
+    repos, _, _ = collect_git([tmp_path / "code"], week, keywords=["nothing"])
     assert repos == []
+
+
+def test_git_progress_and_cancel(tmp_path, week):
+    make_repo(tmp_path / "code" / "app")
+    make_repo(tmp_path / "code" / "api")
+    events: list[dict] = []
+    repos, scanned, cancelled = collect_git([tmp_path / "code"], week, progress=events.append)
+    assert not cancelled and scanned == 2 and len(repos) == 2
+    phases = {event["phase"] for event in events}
+    assert {"discover", "collect"} <= phases
+    collecting = [event for event in events if event["phase"] == "collect"]
+    assert [event["total"] for event in collecting] == [2, 2]
+
+    # discovery checks once per root, then once per repository: trips on the second repo
+    polls = {"count": 0}
+
+    def cancel_soon() -> bool:
+        polls["count"] += 1
+        return polls["count"] > 2
+
+    repos, _, cancelled = collect_git([tmp_path / "code"], week, cancel=cancel_soon)
+    assert cancelled and len(repos) == 1
+
+
+def test_gather_cancel_stops_early(tmp_path, week):
+    make_repo(tmp_path / "code" / "app")
+    roots = make_records(tmp_path)
+    cfg = deep_merge(DEFAULTS, {"git": {"roots": [str(tmp_path / "code")]},
+                                "agents": {"roots": {k: str(v) for k, v in roots.items()}}})
+    activity = gather(cfg, week, [], cancel=lambda: True)
+    assert activity.cancelled and activity.repos == [] and activity.sessions == []
+
+    seen: list[dict] = []
+    gather(cfg, week, [], progress=seen.append)
+    assert {event["source"] for event in seen} == {"git", "agents"}
 
 
 def test_gather_and_render_respects_limits(tmp_path, week):
@@ -89,3 +126,23 @@ def test_render_empty(week):
     activity = Activity(week)
     assert activity.is_empty
     assert "no commits" in render_activity(activity)
+
+
+def test_filter_activity_selects_subsets(tmp_path, week):
+    make_repo(tmp_path / "code" / "app")
+    roots = make_records(tmp_path)
+    cfg = deep_merge(DEFAULTS, {"git": {"roots": [str(tmp_path / "code")]},
+                                "agents": {"roots": {k: str(v) for k, v in roots.items()}}})
+    activity = gather(cfg, week, [])
+    repo_keys = [repo.key for repo in activity.repos]
+    session_keys = [session.key for session in activity.sessions]
+
+    filtered = filter_activity(activity, {session_keys[0]}, set(repo_keys[:1]))
+    assert [session.key for session in filtered.sessions] == [session_keys[0]]
+    assert [repo.key for repo in filtered.repos] == repo_keys[:1]
+    assert not filtered.is_empty and not filtered.cancelled
+    assert len(activity.sessions) == len(session_keys)  # the original is untouched
+
+    nothing = filter_activity(activity, set(), set())
+    assert nothing.is_empty
+    assert "no commits" in render_activity(nothing) and "no AI assistant sessions" in render_activity(nothing)
