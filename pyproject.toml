@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weekly-report"
+dynamic = ["version"]
+description = "Turn your git commits and AI-assistant sessions (Claude Code, Codex, Kiro) into a weekly report with any LLM."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "karte796" }]
+requires-python = ">=3.9"
+dependencies = ["tomli>=1.1; python_version < '3.11'"]
+keywords = ["weekly report", "llm", "git", "claude-code", "codex", "kiro", "cli"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business",
+    "Topic :: Software Development",
+]
+
+[project.urls]
+Homepage = "https://github.com/karte796/weeklyReport"
+Issues = "https://github.com/karte796/weeklyReport/issues"
+
+[project.scripts]
+weekly-report = "weekly_report.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools]
+packages = ["weekly_report", "weekly_report.collectors"]
+
+[tool.setuptools.dynamic]
+version = { attr = "weekly_report.__version__" }
+
+[tool.setuptools.package-data]
+weekly_report = ["templates/*.md", "config.example.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated reports and local config may contain real work data or secrets
+*.local.toml
+config.toml
+.env
+reports/
+weekly-reports/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

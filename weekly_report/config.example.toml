@@ -1,0 +1,70 @@
+# weekly-report configuration
+# Location: ~/.config/weekly-report/config.toml (or set WEEKLY_REPORT_CONFIG)
+# Every key is optional; anything omitted falls back to the built-in default.
+
+provider = "deepseek"          # default provider, see `weekly-report providers`
+language = "zh"                # zh | en
+author_name = ""               # shown in the report title, e.g. "Alice"
+output_dir = "~/weekly-reports"
+default_week = "last"          # this | last | prev
+# template = "~/.config/weekly-report/my-template.md"   # custom Markdown template
+# extra_instructions = "Keep each bullet under 30 words."
+
+[git]
+enabled = true
+roots = ["~/code"]             # directories scanned recursively for git repositories
+authors = []                   # empty = each repo's own `git config user.email`
+max_depth = 4
+exclude = []                   # skip repos whose path contains any of these strings
+
+[agents]
+enabled = true
+sources = ["claude", "codex", "kiro", "kiro-cli"]
+include_prompts = true         # false = send only session titles, never your prompts
+max_prompt_len = 160
+max_prompts_per_session = 8
+exclude = []                   # skip sessions whose working dir contains any of these
+# [agents.roots]               # override record directories if yours differ
+# claude = "~/.claude/projects"
+
+# ---------------------------------------------------------------- providers
+# Built-in presets: openai, deepseek, qwen, kimi, zhipu, siliconflow, openrouter,
+# ollama, anthropic (alias: claude), gemini.
+# Override a preset or add your own. Put only the *name* of the environment
+# variable here - never commit the key itself.
+
+[providers.deepseek]
+model = "deepseek-chat"
+api_key_env = "DEEPSEEK_API_KEY"
+
+# [providers.anthropic]
+# model = "claude-sonnet-4-5"
+# api_key_env = "ANTHROPIC_API_KEY"
+
+# Any OpenAI-compatible endpoint works with type = "openai":
+# [providers.my-gateway]
+# type = "openai"
+# base_url = "https://llm.example.com/v1"
+# model = "gpt-4o"
+# api_key_env = "MY_GATEWAY_KEY"
+# temperature = 0.3
+# max_tokens = 4096
+
+# Fully local, nothing leaves your machine:
+# [providers.ollama]
+# model = "qwen2.5:14b"
+
+# ---------------------------------------------------------------- email
+[email]
+method = "smtp"                # smtp | agently
+to = []                        # agently: empty = your own agent mailbox
+cc = []
+# subject = "{title}"          # placeholders: {title} {name} {label} {start} {end}
+
+[email.smtp]
+host = "smtp.example.com"
+port = 465
+security = "ssl"               # ssl | starttls | none
+username = "you@example.com"
+from = "you@example.com"
+password_env = "SMTP_PASSWORD" # app password / authorization code, read from this env var
